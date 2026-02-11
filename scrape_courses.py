@@ -44,6 +44,7 @@ def extract_course_details(catoid, coid):
             "cross_listed": "",
             "hours": "",
             "when_offered": "",
+            "repeatable": "",
             "notes": ""
         }
 
@@ -85,7 +86,8 @@ def extract_course_details(catoid, coid):
             "Note": [], 
             "Corequisite": [],
             "Cross-listed": [],
-            "Hours": []
+            "Hours": [],
+            "Repeatable": []
         }
         
         for child in content_container.children:
@@ -127,6 +129,8 @@ def extract_course_details(catoid, coid):
                     current_section = "Cross-listed"
                 elif "Hour" in header:
                     current_section = "Hours"
+                elif "Repeatable" in header:
+                    current_section = "Repeatable"
                 else:
                     # Treat as part of text if not a known header?
                     # Or capture as new section
@@ -171,6 +175,7 @@ def extract_course_details(catoid, coid):
         course_data['cross_listed'] = " ".join(captured_text.get("Cross-listed", [])).strip() or course_data['cross_listed']
         course_data['hours'] = " ".join(captured_text.get("Hours", [])).strip().lstrip('.')
         course_data['when_offered'] = " ".join(captured_text.get("When Offered", [])).strip()
+        course_data['repeatable'] = " ".join(captured_text.get("Repeatable", [])).strip()
         course_data['notes'] = " ".join(captured_text.get("Notes", [])).strip()
         if captured_text.get("Note"):
              course_data['notes'] += " " + " ".join(captured_text["Note"]).strip()
