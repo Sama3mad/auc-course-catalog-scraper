@@ -20,8 +20,8 @@ from pathlib import Path
 class PrerequisiteParser:
     """Parse prerequisite text into AST structure"""
     
-    # Course code pattern: 4 letters followed by 4 digits
-    COURSE_PATTERN = r'\b[A-Z]{4}\s*\d{4}\b'
+    # Course code pattern: 4 letters followed by 4 digits, optional 1 letter suffix
+    COURSE_PATTERN = r'\b[A-Z]{4}\s*\d{4}[A-Z]?\b'
     
     def __init__(self):
         self.text_conditions = {
@@ -34,16 +34,6 @@ class PrerequisiteParser:
         }
     
     def parse(self, prerequisites_text: str, concurrent_text: str = "") -> Dict[str, Any]:
-        """
-        Parse prerequisite and concurrent text into AST.
-        
-        Args:
-            prerequisites_text: The prerequisites field text
-            concurrent_text: The concurrent field text (if separate)
-        
-        Returns:
-            PrerequisiteAST dictionary
-        """
         if not prerequisites_text and not concurrent_text:
             return {
                 "prerequisites": None,
@@ -51,20 +41,16 @@ class PrerequisiteParser:
                 "raw_text": ""
             }
         
-        # Combine texts for processing
         full_text = prerequisites_text.strip()
         raw_text = full_text
         
-        # Extract concurrent requirements
         prereq_node, concurrent_node = self._split_prereq_and_concurrent(full_text)
         
-        # Add any concurrent from separate field
         if concurrent_text:
             raw_text += f" | Concurrent: {concurrent_text}"
             concurrent_from_field = self._parse_concurrent(concurrent_text)
             if concurrent_from_field:
                 if concurrent_node:
-                    # Merge both concurrent requirements
                     concurrent_node = {
                         "type": "and",
                         "children": [concurrent_node, concurrent_from_field]
@@ -72,24 +58,81 @@ class PrerequisiteParser:
                 else:
                     concurrent_node = concurrent_from_field
         
+        # Cleanup: remove duplicated concurrent requirements from corequisites
+        if prereq_node and concurrent_node:
+            concurrent_prereqs = self._get_concurrent_prereqs(prereq_node)
+            if concurrent_prereqs:
+                concurrent_node = self._remove_courses_from_node(concurrent_node, concurrent_prereqs)
+        
         return {
             "prerequisites": prereq_node,
             "corequisites": concurrent_node,
             "raw_text": raw_text
         }
     
+    def _get_concurrent_prereqs(self, node: Optional[Dict[str, Any]]) -> set:
+        if not node:
+            return set()
+            
+        node_type = node.get("type")
+        if node_type == "course":
+            if node.get("is_concurrent") is True:
+                return {node.get("course_code")}
+            return set()
+        elif node_type in ("and", "or"):
+            result = set()
+            for child in node.get("children", []):
+                result.update(self._get_concurrent_prereqs(child))
+            return result
+        elif node_type == "group":
+            return self._get_concurrent_prereqs(node.get("expression"))
+            
+        return set()
+        
+    def _remove_courses_from_node(self, node: Optional[Dict[str, Any]], courses_to_remove: set) -> Optional[Dict[str, Any]]:
+        if not node or not courses_to_remove:
+            return node
+            
+        node_type = node.get("type")
+        if node_type == "course":
+            if node.get("course_code") in courses_to_remove:
+                return None
+            return node
+        elif node_type == "concurrent":
+            new_course_node = self._remove_courses_from_node(node.get("course"), courses_to_remove)
+            if not new_course_node:
+                return None
+            node["course"] = new_course_node
+            return node
+        elif node_type in ("and", "or"):
+            new_children = []
+            for child in node.get("children", []):
+                new_child = self._remove_courses_from_node(child, courses_to_remove)
+                if new_child:
+                    new_children.append(new_child)
+            if not new_children:
+                return None
+            if len(new_children) == 1:
+                return new_children[0]
+            node["children"] = new_children
+            return node
+        elif node_type == "group":
+            new_expr = self._remove_courses_from_node(node.get("expression"), courses_to_remove)
+            if not new_expr:
+                return None
+            node["expression"] = new_expr
+            return node
+            
+        return node
+    
     def _split_prereq_and_concurrent(self, text: str) -> tuple:
-        """Split text into prerequisite and concurrent parts"""
         if not text:
             return None, None
         
         text_lower = text.lower()
-        
-        # Check if it's ONLY a concurrent requirement
         if text_lower.startswith('concurrent') or text_lower.startswith('prerequisite: concurrent'):
             return None, self._parse_concurrent(text)
         
-        # Split on "and concurrent", "concurrent with", etc.
         concurrent_match = re.search(
             r'(,?\s*and\s+concurrent\s+with|,?\s*and\s+Concurrent\s+with|Must be taken concurrently with)',
             text,
@@ -99,224 +142,163 @@ class PrerequisiteParser:
         if concurrent_match:
             prereq_part = text[:concurrent_match.start()].strip()
             concurrent_part = text[concurrent_match.end():].strip()
+            return self._parse_expression(prereq_part) if prereq_part else None, self._parse_concurrent(concurrent_part) if concurrent_part else None
             
-            prereq_node = self._parse_expression(prereq_part) if prereq_part else None
-            concurrent_node = self._parse_concurrent(concurrent_part) if concurrent_part else None
-            
-            return prereq_node, concurrent_node
-        
-        # No concurrent found, it's all prerequisites
         return self._parse_expression(text), None
     
     def _parse_concurrent(self, text: str) -> Optional[Dict[str, Any]]:
-        """Parse concurrent/corequisite text"""
         if not text:
             return None
-        
-        # Extract course code
         courses = re.findall(self.COURSE_PATTERN, text)
         note = ""
-        
-        # Check for additional notes
         if "for" in text.lower():
             note_match = re.search(r'for\s+(.+?)(?:\.|$)', text, re.IGNORECASE)
             if note_match:
                 note = note_match.group(1).strip()
         
         if courses:
-            # If multiple courses, create OR node
             if len(courses) > 1:
                 course_node = {
                     "type": "or",
-                    "children": [{"type": "course", "course_code": c.replace(" ", "")} 
-                                for c in courses]
+                    "children": [{"type": "course", "course_code": c.replace(" ", "")} for c in courses]
                 }
             else:
                 course_node = {"type": "course", "course_code": courses[0].replace(" ", "")}
-            
             return {
                 "type": "concurrent",
                 "course": course_node,
                 "note": note
             }
-        
         return None
     
     def _parse_expression(self, text: str) -> Optional[Dict[str, Any]]:
-        """Parse a prerequisite expression"""
         if not text:
             return None
-        
         text = text.strip()
-        
-        # Handle "Pre-requisites or concurrent:" prefix
         text = re.sub(r'^Pre-requisites\s+or\s+concurrent:\s*', '', text, flags=re.IGNORECASE)
         text = re.sub(r'^Prerequisite:\s*', '', text, flags=re.IGNORECASE)
         
-        # Handle parentheses for grouping
+        # Convert both "(or concurrent)" and "or concurrent" (and their "ly" variants) to a special token
+        text = re.sub(r'\(\s*or\s+concurrent(?:ly)?\s*\)', '__OR_CONCURRENT__', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bor\s+concurrent(?:ly)?\b', '__OR_CONCURRENT__', text, flags=re.IGNORECASE)
+        
         if '(' in text and ')' in text:
             return self._parse_with_groups(text)
-        
-        # Split on AND (but not "and concurrent")
-        and_parts = self._split_on_and(text)
-        
-        if len(and_parts) > 1:
-            children = []
-            for part in and_parts:
-                child = self._parse_or_expression(part.strip())
-                if child:
-                    children.append(child)
             
+        and_parts = self._split_on_and(text)
+        if len(and_parts) > 1:
+            children = [child for part in and_parts if (child := self._parse_or_expression(part.strip()))]
             if len(children) == 1:
                 return children[0]
             elif children:
                 return {"type": "and", "children": children}
-        
-        # No AND found, try OR
         return self._parse_or_expression(text)
     
     def _split_on_and(self, text: str) -> List[str]:
-        """Split text on 'and' but not 'and concurrent'"""
-        # Replace "and concurrent" temporarily
-        text = re.sub(r'\band\s+concurrent\b', '~~~CONCURRENT~~~', text, flags=re.IGNORECASE)
-        
-        # Split on remaining 'and'
+        # Normalize commas between course codes into "and" so that lists like
+        # "CSCE 3301 , CSCE 3401 , CSCE 3312" are treated as an AND-expression
+        # and each course is captured individually.
+        course_to_course_comma = rf'({self.COURSE_PATTERN})\s*,\s*(?={self.COURSE_PATTERN})'
+        text = re.sub(course_to_course_comma, r'\1 and ', text)
+        text = re.sub(r'\band\s+concurrent(?:ly)?\b', '~~~CONCURRENT~~~', text, flags=re.IGNORECASE)
         parts = re.split(r'\s+and\s+', text, flags=re.IGNORECASE)
-        
-        # Restore "and concurrent"
-        parts = [p.replace('~~~CONCURRENT~~~', 'and concurrent') for p in parts]
-        
-        return parts
+        return [p.replace('~~~CONCURRENT~~~', 'and concurrent') for p in parts]
     
     def _parse_or_expression(self, text: str) -> Optional[Dict[str, Any]]:
-        """Parse an OR expression"""
         if not text:
             return None
-        
-        # Split on OR
         or_parts = re.split(r'\s+or\s+', text, flags=re.IGNORECASE)
-        
         if len(or_parts) > 1:
-            children = []
-            for part in or_parts:
-                child = self._parse_atomic(part.strip())
-                if child:
-                    children.append(child)
-            
+            children = [child for part in or_parts if (child := self._parse_atomic(part.strip()))]
             if len(children) == 1:
                 return children[0]
             elif children:
                 return {"type": "or", "children": children}
-        
-        # No OR found, parse as atomic
         return self._parse_atomic(text)
     
     def _parse_atomic(self, text: str) -> Optional[Dict[str, Any]]:
-        """Parse an atomic expression (course or text condition)"""
         if not text:
             return None
-        
         text = text.strip(' ,.')
         
-        # Check for "(or concurrent)" modifier
+        # Check for placeholder first
+        placeholder_match = re.search(r'~~~GROUP\d+~~~', text)
+        if placeholder_match:
+            return {
+                "type": "group_placeholder",
+                "placeholder": placeholder_match.group(0)
+            }
+            
         is_concurrent = False
-        concurrent_match = re.search(r'\(\s*or\s+concurrent\s*\)', text, re.IGNORECASE)
-        if concurrent_match:
+        if '__OR_CONCURRENT__' in text:
             is_concurrent = True
-            text = text[:concurrent_match.start()].strip() + text[concurrent_match.end():].strip()
-        
-        # Try to find a course code
+            text = text.replace('__OR_CONCURRENT__', '').strip()
+            
         course_match = re.search(self.COURSE_PATTERN, text)
-        
         if course_match:
-            course_code = course_match.group(0).replace(" ", "")
             return {
                 "type": "course",
-                "course_code": course_code,
+                "course_code": course_match.group(0).replace(" ", ""),
                 "is_concurrent": is_concurrent,
                 "is_optional": False
             }
-        
-        # Check if it's a text condition
-        text_lower = text.lower()
-        
-        # Determine category
+            
         category = "other"
         for cat, keywords in self.text_conditions.items():
-            for keyword in keywords:
-                if keyword in text_lower:
-                    category = cat
-                    break
-        
-        # If we found a recognizable condition, return it
-        if category != "other" or len(text) > 5:  # Avoid very short non-course strings
+            if any(k in text.lower() for k in keywords):
+                category = cat
+                break
+                
+        if category != "other" or len(text) > 5:
             return {
                 "type": "text_condition",
                 "condition": text,
                 "category": category
             }
-        
         return None
     
     def _parse_with_groups(self, text: str) -> Optional[Dict[str, Any]]:
-        """Parse expression with parenthetical groups"""
-        # Find all groups
         groups = []
         group_pattern = r'\([^()]+\)'
-        
-        # Replace groups with placeholders
         placeholder_map = {}
         counter = 0
         
         def replace_group(match):
             nonlocal counter
-            group_text = match.group(0)[1:-1]  # Remove parentheses
+            group_text = match.group(0)[1:-1]
             placeholder = f"~~~GROUP{counter}~~~"
             placeholder_map[placeholder] = group_text
             counter += 1
             return placeholder
         
-        modified_text = re.sub(group_pattern, replace_group, text)
-        
-        # Parse the modified text
-        result = self._parse_expression(modified_text)
-        
-        # Replace placeholders back with parsed groups
+        while re.search(group_pattern, text):
+            text = re.sub(group_pattern, replace_group, text)
+            
+        result = self._parse_expression(text)
         result = self._replace_placeholders(result, placeholder_map)
-        
         return result
     
-    def _replace_placeholders(self, node: Optional[Dict[str, Any]], 
-                             placeholder_map: Dict[str, str]) -> Optional[Dict[str, Any]]:
-        """Replace placeholder groups with actual parsed groups"""
+    def _replace_placeholders(self, node: Optional[Dict[str, Any]], placeholder_map: Dict[str, str]) -> Optional[Dict[str, Any]]:
         if node is None:
             return None
         
         node_type = node.get("type")
-        
-        if node_type == "course":
-            # Check if course_code is a placeholder
-            if node["course_code"].startswith("~~~GROUP"):
-                placeholder = node["course_code"]
-                if placeholder in placeholder_map:
-                    group_text = placeholder_map[placeholder]
-                    group_node = self._parse_expression(group_text)
-                    return {"type": "group", "expression": group_node}
+        if node_type == "group_placeholder":
+            placeholder = node["placeholder"]
+            if placeholder in placeholder_map:
+                group_text = placeholder_map[placeholder]
+                group_node = self._parse_expression(group_text)
+                return {"type": "group", "expression": group_node}
             return node
-        
+            
         elif node_type in ["and", "or"]:
-            new_children = []
-            for child in node.get("children", []):
-                new_child = self._replace_placeholders(child, placeholder_map)
-                if new_child:
-                    new_children.append(new_child)
-            node["children"] = new_children
+            node["children"] = [new_child for child in node.get("children", []) if (new_child := self._replace_placeholders(child, placeholder_map))]
             return node
-        
+            
         elif node_type == "group":
             node["expression"] = self._replace_placeholders(node.get("expression"), placeholder_map)
             return node
-        
+            
         return node
 
 
@@ -324,8 +306,8 @@ def main():
     """Main function to parse all courses"""
     
     # File paths
-    input_file = Path("all_courses.json")
-    backup_file = Path("all_courses.json.backup")
+    input_file = (Path(__file__).parent / "../data/all_courses.json").resolve()
+    backup_file = (Path(__file__).parent / "../data/all_courses.json.backup").resolve()
     
     # Check if input file exists
     if not input_file.exists():

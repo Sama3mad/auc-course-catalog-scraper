@@ -162,8 +162,8 @@ def main():
     """Main function to add course_code, course_title, and difficulty_level fields"""
     
     # File paths
-    input_file = Path("final_all_courses.json")
-    backup_file = Path("final_all_courses.json.backup")
+    input_file = (Path(__file__).parent / "../data/final_all_courses.json").resolve()
+    backup_file = (Path(__file__).parent / "../data/final_all_courses.json.backup").resolve()
     
     # Check if input file exists
     if not input_file.exists():

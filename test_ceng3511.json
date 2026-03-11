@@ -1,0 +1,62 @@
+{
+  "url": "https://catalog.aucegypt.edu/preview_course_nopop.php?catoid=40&coid=98953",
+  "title": "CENG 3511 - Fundamentals of Hydraulic Engineering (3 cr.)",
+  "credits": "3",
+  "description": "Introduction to water resources projects, pipelines and pipe networks, pumps, open channel flow, hydraulic structures, water flow in soil media, seepage, wells and dewatering systems.",
+  "prerequisites": "( CENG 2511 or ENGR 2122 ) and ( CENG 3113 or ENGR 3202 ) or concurrent.",
+  "concurrent": "CENG 3113 or ENGR 3202",
+  "cross_listed": "",
+  "hours": "Two class periods and three hour lab period.",
+  "when_offered": "Offered in fall and spring.",
+  "repeatable": "",
+  "notes": "",
+  "prerequisite_ast": {
+    "prerequisites": {
+      "type": "and",
+      "children": [
+        {
+          "type": "group",
+          "expression": {
+            "type": "or",
+            "children": [
+              {
+                "type": "course",
+                "course_code": "CENG2511",
+                "is_concurrent": false,
+                "is_optional": false
+              },
+              {
+                "type": "course",
+                "course_code": "ENGR2122",
+                "is_concurrent": false,
+                "is_optional": false
+              }
+            ]
+          }
+        },
+        {
+          "type": "group",
+          "expression": {
+            "type": "or",
+            "children": [
+              {
+                "type": "course",
+                "course_code": "CENG3113",
+                "is_concurrent": true,
+                "is_optional": false
+              },
+              {
+                "type": "course",
+                "course_code": "ENGR3202",
+                "is_concurrent": true,
+                "is_optional": false
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "corequisites": null,
+    "raw_text": "( CENG 2511 or ENGR 2122 ) and ( CENG 3113 or ENGR 3202 ) or concurrent. | Concurrent: CENG 3113 or ENGR 3202"
+  }
+}

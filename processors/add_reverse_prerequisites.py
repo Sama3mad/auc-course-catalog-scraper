@@ -140,8 +140,8 @@ def main():
     """Main function to add is_prerequisite_for field"""
     
     # File paths
-    input_file = Path("all_courses.json")
-    output_file = Path("final_all_courses.json")
+    input_file = (Path(__file__).parent / "../data/all_courses.json").resolve()
+    output_file = (Path(__file__).parent / "../data/final_all_courses.json").resolve()
     
     # Check if input file exists
     if not input_file.exists():

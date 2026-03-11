@@ -1,3 +1,4 @@
+from pathlib import Path
 """
 Scrape all courses from the AUC catalog Courses listing (pages 1-24).
 Uses the same course detail fields as the program-specific scrapers.
@@ -13,16 +14,16 @@ import traceback
 requests.packages.urllib3.disable_warnings()
 
 BASE_URL = "https://catalog.aucegypt.edu/"
-# 2024-2025 Published Catalog - Courses listing (filter active courses)
+# 2025-2026 Published Catalog - Courses listing (filter active courses)
 CATALOG_COURSES_BASE = (
     "https://catalog.aucegypt.edu/content.php"
-    "?catoid=40&catoid=40&navoid=2037"
+    "?catoid=44&navoid=2294"
     "&filter%5Bitem_type%5D=3&filter%5Bonly_active%5D=1&filter%5B3%5D=1"
     "&filter%5Bcpage%5D={page}#acalog_template_course_filter"
 )
 FIRST_PAGE = 1
 LAST_PAGE = 24
-OUTPUT_FILE = "all_courses.json"
+OUTPUT_FILE = str((Path(__file__).parent / "../data/all_courses.json").resolve())
 
 
 def get_soup(url):

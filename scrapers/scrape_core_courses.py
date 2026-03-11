@@ -1,3 +1,4 @@
+from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 import re
@@ -11,7 +12,7 @@ requests.packages.urllib3.disable_warnings()
 
 BASE_URL = "https://catalog.aucegypt.edu/"
 PROGRAM_URL = "https://catalog.aucegypt.edu/preview_program.php?catoid=44&poid=8294"
-OUTPUT_FILE = "core_courses.json"
+OUTPUT_FILE = str((Path(__file__).parent / "../data/core_courses.json").resolve())
 
 def get_soup(url):
     try:
